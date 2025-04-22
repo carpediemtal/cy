@@ -1,7 +1,5 @@
 package homework;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 
@@ -22,13 +20,26 @@ class Product {
     }
 }
 
-// 促销策略接口
+
+// 统一优惠策略接口
 interface PromotionStrategy {
-    double applyPromotion(Product product, Date settlementDate);
+    double CategoryDiscount(Product products, Date settlementDate);
+    double FullReduction(double total, Date settlementDate);
 }
 
+
+class defaultPromotion implements PromotionStrategy{
+    public double CategoryDiscount(Product product, Date settlementDate) {
+        return product.getTotalPrice();
+    }
+    public double FullReduction(double total, Date settlementDate) {
+        return total;
+    }
+}
+
+
 // 品类折扣策略
-class CategoryPromotion implements PromotionStrategy {
+class DateCategoryPromotion extends defaultPromotion {
     Date date;
     double discount;
     String category;
@@ -55,29 +66,30 @@ class CategoryPromotion implements PromotionStrategy {
         CATEGORY_MAP.put("伏特加", "酒类");
     }
 
-    public CategoryPromotion(Date date, double discount, String category) {
+    public DateCategoryPromotion(Date date, double discount, String category) {
         this.date = date;
         this.discount = discount;
         this.category = category;
     }
 
     @Override
-    public double applyPromotion(Product product, Date settlementDate) {
+    public double CategoryDiscount(Product product, Date settlementDate) {
+        double discountedTotal = 0;
+
         String productCategory = CATEGORY_MAP.get(product.name);
         if (productCategory != null && productCategory.equals(category) && date.compareTo(settlementDate) <= 0) {
-            return product.getTotalPrice() * discount;
+            discountedTotal += product.getTotalPrice() * discount;
+        } else {
+            discountedTotal += product.getTotalPrice();
         }
-        return product.getTotalPrice();
+
+        return discountedTotal;
     }
 }
 
-// 优惠券接口
-interface CouponStrategy {
-    double applyCoupon(double total, Date settlementDate);
-}
 
-// 满减优惠券策略
-class FullReductionCoupon implements CouponStrategy {
+// 满减优惠券策略类
+class FullReductionCoupon extends defaultPromotion {
     Date expirationDate;
     double threshold;
     double reduction;
@@ -88,8 +100,9 @@ class FullReductionCoupon implements CouponStrategy {
         this.reduction = reduction;
     }
 
+
     @Override
-    public double applyCoupon(double total, Date settlementDate) {
+    public double FullReduction(double total, Date settlementDate) {
         if (expirationDate.after(settlementDate) && total >= threshold) {
             return total - reduction;
         }
@@ -98,133 +111,39 @@ class FullReductionCoupon implements CouponStrategy {
 }
 
 public class ShoppingCartCalculator {
-    public static double calculateTotal(List<Product> products, List<PromotionStrategy> promotions, CouponStrategy coupon, Date settlementDate) {
+
+    public double calculate(String filePath) {
+        InputHandlerImpl inputParser = new InputHandlerImpl(filePath);
+
+        List<Product> products = inputParser.getProducts();
+        List<PromotionStrategy> promotions = inputParser.getPromotions();
+        Date settlementDate = inputParser.getSettlementDate();
+
+        double total = calculateTotal(products, promotions, settlementDate);
+
+        return total;
+    }
+
+    // 按照各类优惠规则计算总价格
+    public double calculateTotal(List<Product> products, List<PromotionStrategy> promotions, Date settlementDate) {
         double total = 0;
         for (Product product : products) {
-            double productTotal = product.getTotalPrice();
+            double currentPrice = product.getTotalPrice();
             for (PromotionStrategy promotion : promotions) {
-                productTotal = promotion.applyPromotion(product, settlementDate);
+               currentPrice = Math.min(promotion.CategoryDiscount(product, settlementDate), currentPrice);
             }
-            total += productTotal;
+            total += currentPrice;
         }
-        if (coupon != null) {
-            total = coupon.applyCoupon(total, settlementDate);
+
+        for (PromotionStrategy promotion : promotions) {
+            total = promotion.FullReduction(total, settlementDate);
         }
         return Math.round(total * 100.0) / 100.0;
     }
 
     public static void main(String[] args) {
-        List<Product> products = new ArrayList<>();
-        List<PromotionStrategy> promotions = new ArrayList<>();
-        CouponStrategy coupon = null;
-        Date settlementDate = null;
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd");
-        Scanner scanner = new Scanner(System.in);
-
-        // 读取所有输入直到 EOF（Ctrl+Z 或 Ctrl+D）
-        List<String> allLines = new ArrayList<>();
-        while (scanner.hasNextLine()) {
-            allLines.add(scanner.nextLine());
-        }
-        scanner.close();
-
-        // 按空行分割为四部分：促销、产品、日期+优惠券（合并）
-        List<String> sections = new ArrayList<>();
-        StringBuilder currentSection = new StringBuilder();
-        for (String line : allLines) {
-            if (line.trim().isEmpty()) { // 空行作为分隔符
-                if (currentSection.length() > 0) {
-                    sections.add(currentSection.toString().trim());
-                    currentSection = new StringBuilder();
-                }
-            } else {
-                currentSection.append(line).append("\n");
-            }
-        }
-        // 添加最后一个部分（可能包含日期和优惠券）
-        if (currentSection.length() > 0) {
-            sections.add(currentSection.toString().trim());
-        }
-
-        // 解析四部分（允许前两部分为空，后两部分合并为日期+优惠券）
-        String promotionSection = sections.size() > 0 ? sections.get(0) : "";
-        String productSection = sections.size() > 1 ? sections.get(1) : "";
-        String dateAndCouponSection = sections.size() > 2 ? sections.get(2) : "";
-
-        // 解析促销信息（第一部分）
-        parsePromotions(promotionSection, promotions, dateFormat);
-        // 解析产品信息（第二部分）
-        parseProducts(productSection, products);
-        // 解析日期和优惠券（第三部分）
-        Object[] result = parseDateAndCoupon(dateAndCouponSection, dateFormat);
-        settlementDate = (Date) result[0];
-        coupon = (CouponStrategy) result[1];
-
-        if (settlementDate != null) {
-            double total = calculateTotal(products, promotions, coupon, settlementDate);
-            System.out.printf("%.2f%n", total);
-        }
-    }
-
-    private static void parsePromotions(String section, List<PromotionStrategy> promotions, SimpleDateFormat dateFormat) {
-        for (String line : section.split("\n")) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-            String[] parts = line.split(" \\| ");
-            if (parts.length == 3) {
-                try {
-                    promotions.add(new CategoryPromotion(
-                            dateFormat.parse(parts[0]),
-                            Double.parseDouble(parts[1]),
-                            parts[2]
-                    ));
-                } catch (Exception e) { /* 忽略格式错误的行 */ }
-            }
-        }
-    }
-
-    private static void parseProducts(String section, List<Product> products) {
-        for (String line : section.split("\n")) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-            String[] parts = line.split(" \\* ");
-            if (parts.length == 2) {
-                try {
-                    String[] namePrice = parts[1].split(" : ");
-                    products.add(new Product(
-                            namePrice[0].trim(),
-                            Integer.parseInt(parts[0]),
-                            Double.parseDouble(namePrice[1])
-                    ));
-                } catch (Exception e) { /* 忽略格式错误的行 */ }
-            }
-        }
-    }
-
-    private static Object[] parseDateAndCoupon(String section, SimpleDateFormat dateFormat) {
-        Date settlementDate = null;
-        CouponStrategy coupon = null;
-        String[] lines = section.split("\n");
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].trim();
-            if (line.isEmpty()) continue;
-            if (i == 0) { // 第一行为结算日期
-                try {
-                    settlementDate = dateFormat.parse(line);
-                } catch (ParseException e) { /* 日期格式错误则跳过 */ }
-            } else { // 后续行为优惠券信息
-                String[] parts = line.split(" ");
-                if (parts.length == 3) {
-                    try {
-                        coupon = new FullReductionCoupon(
-                                dateFormat.parse(parts[0]),
-                                Double.parseDouble(parts[1]),
-                                Double.parseDouble(parts[2])
-                        );
-                    } catch (Exception e) { /* 忽略格式错误的优惠券 */ }
-                }
-            }
-        }
-        return new Object[]{settlementDate, coupon};
+        ShoppingCartCalculator cal = new ShoppingCartCalculator();
+        double res = cal.calculate("C:\\Users\\ming\\IdeaProjects\\leetcode\\src\\homework\\input\\case03.txt");
+        System.out.printf("%.2f%n", res);
     }
 }
