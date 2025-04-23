@@ -3,28 +3,6 @@ package homework;
 import java.util.*;
 
 
-// 满减优惠券策略类
-class FullReductionCoupon extends defaultPromotion {
-    Date expirationDate;
-    double threshold;
-    double reduction;
-
-    public FullReductionCoupon(Date expirationDate, double threshold, double reduction) {
-        this.expirationDate = expirationDate;
-        this.threshold = threshold;
-        this.reduction = reduction;
-    }
-
-
-    @Override
-    public double FullReduction(double total, Date settlementDate) {
-        if (expirationDate.after(settlementDate) && total >= threshold) {
-            return total - reduction;
-        }
-        return total;
-    }
-}
-
 public class ShoppingCartCalculator {
 
     public double calculate(String filePath) {
