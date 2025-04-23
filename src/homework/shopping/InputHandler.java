@@ -1,9 +1,7 @@
-package homework;
+package homework.shopping;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -12,10 +10,10 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class InputHandlerImpl {
+public class InputHandler {
     private static final String DATE_CATEGORY_PATTERN_STR = "(\\d{4}\\.\\d{2}\\.\\d{2}) \\| (\\d+\\.?\\d*) \\| (\\S+)";
-    private static final String PRODUCT_PATTERN_STR = "(\\d+) \\* (\\S+) : (\\d+\\.?\\d*)";
-    private static final String SETTLEMENT_DATE_PATTERN_STR = "(\\d{4}\\.\\d{2}\\.\\d{2})";
+    private static final String PRODUCT_PATTERN_STR = "(\\d+) \\* (\\S+) : (\\-?\\d+\\.?\\d*)";
+    private static final String SETTLEMENT_DATE_PATTERN_STR = "\\b(\\d{4})\\.(\\d{2})\\.(\\d{2})\\b(?! \\|)";
     private static final String COUPON_PATTERN_STR = "(\\d{4}\\.\\d{1,2}\\.\\d{1,2}) (\\d+) (\\d+)";
 
 
@@ -25,18 +23,20 @@ public class InputHandlerImpl {
     private static final Pattern COUPON_PATTERN = Pattern.compile(COUPON_PATTERN_STR);
 
     private List<Product> products;
-    private List<PromotionStrategy> promotions;
-    private Date settlementDate;
+    private List<SinglePromotion> singlePromotions;
+    private List<TotalPromotion> totalPromotions;
+    private Date settlementDate = null;
     private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd");
 
-    public InputHandlerImpl(String filePath) {
+    public InputHandler(String filePath) {
         inputParser(filePath);
-        // TODO：解析并校验文件
     }
 
+    // 获取文件中全部的输入
     public void inputParser(String inputFilePath) {
         products = new ArrayList<>();
-        promotions = new ArrayList<>();
+        singlePromotions = new ArrayList<>();
+        totalPromotions = new ArrayList<>();
         StringBuilder fileContent = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new FileReader(inputFilePath))) {
             String line;
@@ -46,30 +46,40 @@ public class InputHandlerImpl {
             parseContent(fileContent.toString());
         } catch (Exception e) {
             System.err.println("Error reading file: " + e.getMessage());
+            throw new IllegalArgumentException("文件读取错误");
         }
     }
 
+    // 按照正则表达式解析信息
     private void parseContent(String content) {
-        parseDateCategoryPromotions(content);  // 解析促销信息
-        parseProducts(content);   // 解析产品
-        parseSettlementDate(content);  // 解析结算日期
-        parseCoupons(content);  // 解析优惠券信息
+        parseCategoryPromotions(content);
+        parseProducts(content);
+        parseSettlementDate(content);
+        parseCoupons(content);
+        if (products.isEmpty()) {
+            throw new IllegalArgumentException("商品列表不能为空");
+        }
+        if (settlementDate == null) {
+            throw new IllegalArgumentException("结算日期不能为空");
+        }
     }
 
-    private void parseDateCategoryPromotions(String content) {
+    // 解析促销信息
+    private void parseCategoryPromotions(String content) {
         Matcher matcher = DATE_CATEGORY_PATTERN.matcher(content);
         while (matcher.find()) {
             try {
                 Date date = dateFormat.parse(matcher.group(1));
                 double discount = Double.parseDouble(matcher.group(2));
                 String category = matcher.group(3);
-                promotions.add(new DateCategoryPromotion(date, discount, category));
+                singlePromotions.add(new CategorySinglePromotion(date, discount, category));
             } catch (ParseException e) {
-                // todo
+                throw new IllegalArgumentException("促销信息格式错误");
             }
         }
     }
 
+    // 解析产品
     private void parseProducts(String content) {
         Matcher matcher = PRODUCT_PATTERN.matcher(content);
         while (matcher.find()) {
@@ -80,17 +90,19 @@ public class InputHandlerImpl {
         }
     }
 
+    // 解析结算日期
     private void parseSettlementDate(String content) {
         Matcher matcher = SETTLEMENT_DATE_PATTERN.matcher(content);
         if (matcher.find()) {
             try {
-                settlementDate = dateFormat.parse(matcher.group(1));
+                settlementDate = dateFormat.parse(matcher.group());
             } catch (ParseException e) {
-                // todo
+                throw new IllegalArgumentException("日期格式错误");
             }
         }
     }
 
+    // 解析优惠券信息
     private void parseCoupons(String content) {
         Matcher matcher = COUPON_PATTERN.matcher(content);
         while (matcher.find()) {
@@ -98,9 +110,9 @@ public class InputHandlerImpl {
                 Date expirationDate = dateFormat.parse(matcher.group(1));
                 double threshold = Double.parseDouble(matcher.group(2));
                 double reduction = Double.parseDouble(matcher.group(3));
-                promotions.add(new FullReductionCoupon(expirationDate, threshold, reduction));
+                totalPromotions.add(new FullReductionCoupon(expirationDate, threshold, reduction));
             } catch (ParseException e) {
-                // todo
+                throw new IllegalArgumentException("优惠券信息格式错误");
             }
         }
     }
@@ -109,8 +121,12 @@ public class InputHandlerImpl {
         return products;
     }
 
-    public List<PromotionStrategy> getPromotions() {
-        return promotions;
+    public List<SinglePromotion> getSinglePromotions() {
+        return singlePromotions;
+    }
+
+    public List<TotalPromotion> getTotalPromotions() {
+        return totalPromotions;
     }
 
     public Date getSettlementDate() {
